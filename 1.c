@@ -10,29 +10,81 @@
 #include <signal.h>
 /*
 TODO 
-add shutdown for  leavers
+add shutdown for leavers
 */
 int shared = 0;
 
 typedef struct usr{
     int fd;
+    char * buf;
+    int bufsize;
+    int cnt;
     struct usr * next;
 } 
 usr;
 
+void printUsrs(usr * list)
+{
+    usr * tmp = list;
+    while(tmp){
+        printf("%d\n", tmp -> fd);
+        tmp = tmp -> next;
+    }
+}
+
+usr * findUsr(int fd , usr * list)
+{
+    usr * tmp = list;
+    while(tmp -> fd != fd)
+        tmp = tmp -> next;
+    return tmp;
+}
+
+char * extendBuf(usr ** user)
+{
+    char * newBuf = malloc(2 * ((*user) -> cnt));
+    strncpy(newBuf, (*user) -> buf, (*user) -> bufsize - 1);
+    (*user) -> bufsize *= 2;
+    free((*user) -> buf);
+    return newBuf;
+}
+
+void execCmd(usr * user)
+{
+    int i;
+    for(i = 0; i < user -> cnt; i++){
+        if(user -> buf[i] == ' ' || user -> buf[i] == '\t' || user -> buf[i] == '\r')
+            user -> buf[i] = 0;
+    }
+
+    /**/
+    i = 0;
+    while(i < user -> cnt){
+        printf("%s\n", &(user -> buf[i]));
+        while(user -> buf[i] != 0)
+            i++;
+        while(user -> buf[i] == 0)
+            i++;
+    }
+}
+
 int cmdFromPlayer(int fd, usr * list)
 {
-    char buf[2];
-    int res = read(fd, &buf, 1);
-    if(res == 1 && buf[0] != '\n' && buf[0] != '\r'){
-        shared = buf[0] - '0';
-        usr * tmp = list;
-        while(tmp){
-            dprintf(tmp -> fd, "shared var was changed by %d and now = %d\n", fd, shared);
-            tmp = tmp -> next;
-        }
+    usr * user = findUsr(fd, list);
+    if(user -> cnt == user -> bufsize - 1)
+        user -> buf = extendBuf(&user);
+
+    //printf("usr = %d; %s; %d\n", user -> fd, user -> buf, user -> cnt);
+    int res = read(fd, &(user -> buf[user -> cnt]), 1);
+    user -> cnt ++;
+    
+    if(user -> buf[user -> cnt - 1] == '\n'){
+        execCmd(user);
+        user -> buf[user -> cnt] = 0;
+        dprintf(fd, "buff was changed by %d and now = %s\n", fd, user -> buf);
+        user -> cnt = 0;
     }
-    if(res == -1)
+    if(res == 0)
         return 0;
     return 1;
 }
@@ -42,6 +94,9 @@ usr * addUsr(usr * list, int fd)
     usr * tmp = malloc(sizeof(* tmp));
     tmp -> next = list;
     tmp -> fd = fd;
+    tmp -> bufsize = 16;
+    tmp -> cnt = 0;
+    tmp -> buf = calloc(tmp -> bufsize, 1);
     dprintf(fd, "welcome, user №%d\n", fd);
     return tmp;
 }
@@ -63,9 +118,16 @@ usr * deleteUsr(usr * list, int fd)
         else{
             usr * tmp = node -> next;
             node -> next = node -> next -> next;
+            /**/
+            printf("thats fd = %d\n", tmp -> fd);
             free(tmp);
         }
+        printf("DBG\n");
+        printUsrs(node);/*DBG*/
+        return node;
     }
+    printf("DBG\n");
+    printUsrs(list);/*DBG*/
     return list;
 }
 
@@ -81,21 +143,15 @@ void freeMem(usr * list)
 
 usr * updateUsrs(usr * players, usr * disconn)
 {
-    while(disconn){
-        players = deleteUsr(players, disconn -> fd);
-        disconn = disconn -> next;
+    usr * tmp = disconn;
+    while(tmp){
+        shutdown(tmp -> fd, 2);
+        close(tmp -> fd);
+        players = deleteUsr(players, tmp -> fd);
+        tmp = tmp -> next;
     }
     freeMem(disconn);
     return players;
-}
-
-void printUsrs(usr * list)
-{
-    usr * tmp = list;
-    while(tmp){
-        printf("%d\n", tmp -> fd);
-        tmp = tmp -> next;
-    }
 }
 
 void processing(int ls)
@@ -134,8 +190,10 @@ void processing(int ls)
             fd = tmp -> fd;
             if(FD_ISSET(fd, &readfds)){
                 res = cmdFromPlayer(fd, players);
-                if(res == 0)
-                    disconn = addUsr(disconn, fd);;
+                if(res == -1){/**/
+                    disconn = addUsr(disconn, fd);
+                    printf("was here\n");
+                }
             }
             tmp = tmp -> next;
         }
