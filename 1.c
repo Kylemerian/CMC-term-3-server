@@ -8,7 +8,10 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
-
+/*
+TODO 
+add shutdown for  leavers
+*/
 int shared = 0;
 
 typedef struct usr{
@@ -17,7 +20,7 @@ typedef struct usr{
 } 
 usr;
 
-void cmdFromPlayer(int fd, usr * list)
+int cmdFromPlayer(int fd, usr * list)
 {
     char buf[2];
     int res = read(fd, &buf, 1);
@@ -29,6 +32,9 @@ void cmdFromPlayer(int fd, usr * list)
             tmp = tmp -> next;
         }
     }
+    if(res == -1)
+        return 0;
+    return 1;
 }
 
 usr * addUsr(usr * list, int fd)
@@ -38,6 +44,49 @@ usr * addUsr(usr * list, int fd)
     tmp -> fd = fd;
     dprintf(fd, "welcome, user №%d\n", fd);
     return tmp;
+}
+
+usr * deleteUsr(usr * list, int fd)
+{
+    usr * node = list;
+    if(node -> fd == fd){
+        list = list -> next;
+        free(node);
+    }
+    else{
+        while(node -> next -> fd != fd)
+            node = node -> next;
+        if(node -> next -> next == NULL){
+            free(node -> next);
+            node -> next = NULL;
+        }
+        else{
+            usr * tmp = node -> next;
+            node -> next = node -> next -> next;
+            free(tmp);
+        }
+    }
+    return list;
+}
+
+void freeMem(usr * list)
+{
+    usr * tmp;
+    while(list){
+        tmp = list;
+        list = list -> next;
+        free(tmp);
+    }
+}
+
+usr * updateUsrs(usr * players, usr * disconn)
+{
+    while(disconn){
+        players = deleteUsr(players, disconn -> fd);
+        disconn = disconn -> next;
+    }
+    freeMem(disconn);
+    return players;
 }
 
 void printUsrs(usr * list)
@@ -54,6 +103,7 @@ void processing(int ls)
     int max_d, fd, res;
     usr * players = NULL;
     usr * tmp = NULL;
+    usr * disconn = NULL;
     while(1){
         fd_set readfds;
         max_d = ls;
@@ -83,11 +133,14 @@ void processing(int ls)
         while(tmp){
             fd = tmp -> fd;
             if(FD_ISSET(fd, &readfds)){
-                cmdFromPlayer(fd, players);
+                res = cmdFromPlayer(fd, players);
+                if(res == 0)
+                    disconn = addUsr(disconn, fd);;
             }
             tmp = tmp -> next;
         }
-        //printUsrs(players);
+        players = updateUsrs(players, disconn);
+        printUsrs(players);/**/
     }
 }
 
