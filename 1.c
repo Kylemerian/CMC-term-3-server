@@ -27,7 +27,7 @@ typedef struct usr{
     int bufsize;
     int cnt;
     int money;
-    int flags[5];
+    int nums[5];
     struct usr * next;
 } 
 usr;
@@ -58,23 +58,94 @@ char * extendBuf(usr ** user)
     return newBuf;
 }
 
+int countWords(char * s, int maxlen)
+{
+    int i = 0;
+    int cnt = 0;
+    /**/printf("len str = %d\n", maxlen);
+    while(i < maxlen){
+        if(s[i] == 0)
+            while(s[i] == 0)
+                i++;
+        cnt++;
+        i++;
+        while(s[i] != 0)
+            i++;
+    }
+    return cnt - 1;
+}
+
+void isCorrect(char ** arg, usr * user)
+{
+    const char * cmds[6];
+    cmds[0] = "buy";
+    cmds[1] = "sell";
+    cmds[2] = "build";
+    cmds[3] = "produce";
+    cmds[4] = "end";
+    cmds[5] = "turn";
+    /**/printf("%s %s\n", arg[0], arg[1]);
+    if(!strcmp(arg[0], cmds[0])){
+        int res = sscanf(arg[1], "%d", &user -> nums[buy]);
+        if(res)
+            dprintf(user -> fd, "%d OK\n", user -> nums[buy]);
+        else
+            dprintf(user -> fd, "Not OK\n");
+    }
+    if(!strcmp(arg[0], cmds[1])){
+        int res = sscanf(arg[1], "%d", &user -> nums[sell]);
+        if(res)
+            dprintf(user -> fd, "%d OK\n", user -> nums[sell]);
+        else
+            dprintf(user -> fd, "Not OK\n");
+    }
+    if(!strcmp(arg[0], cmds[2])){
+        int res = sscanf(arg[1], "%d", &user -> nums[build]);
+        if(res)
+            dprintf(user -> fd, "%d OK\n", user -> nums[build]);
+        else
+            dprintf(user -> fd, "Not OK\n");
+    }
+    if(!strcmp(arg[0], cmds[3])){
+        int res = sscanf(arg[1], "%d", &user -> nums[produce]);
+        if(res)
+            dprintf(user -> fd, "%d OK\n", user -> nums[produce]);
+        else
+            dprintf(user -> fd, "Not OK\n");
+    }
+    if(!strcmp(arg[0], cmds[4])){
+        if(!strcmp(arg[1], cmds[5]))
+            user -> nums[end] = 1;
+        else
+            dprintf(user -> fd, "%d Not OK\n", user -> nums[end]);
+    }
+}
+
 void execCmd(usr * user)
 {
     int i;
+    char * arg[2];
     for(i = 0; i < user -> cnt; i++){
         if(user -> buf[i] == ' ' || user -> buf[i] == '\t' || user -> buf[i] == '\r')
             user -> buf[i] = 0;
     }
-
-    /**/
-    i = 0;
-    while(i < user -> cnt){
-        dprintf(user -> fd, "%s\n", &(user -> buf[i]));
+    int numWords = countWords(user -> buf, user -> cnt);
+    if(numWords == 2){
+        i = 0;
+        while(user -> buf[i] == 0)
+            i++;
+        arg[0] =  &(user -> buf[i]);
         while(user -> buf[i] != 0)
             i++;
         while(user -> buf[i] == 0)
             i++;
+        arg[1] = &(user -> buf[i]);
+        isCorrect(arg, user);
     }
+    else{
+        printf("a few args = %d\n", numWords);
+    }
+
 }
 
 int cmdFromPlayer(int fd, usr * list)
@@ -84,13 +155,13 @@ int cmdFromPlayer(int fd, usr * list)
         user -> buf = extendBuf(&user);
 
     int res = read(fd, &(user -> buf[user -> cnt]), 1);
-    printf("usr = %d; %s; %d read = %d\n", user -> fd, user -> buf, user -> cnt, res);
-    user -> cnt ++;
-    /**/user -> money = 100;
+    //printf("usr = %d; %s; %d read = %d\n", user -> fd, user -> buf, user -> cnt, res);
+    user -> cnt++;
+    //user -> money = 100;*/
     if(user -> buf[user -> cnt - 1] == '\n'){
-        execCmd(user);
         user -> buf[user -> cnt] = 0;
         //dprintf(fd, "buff was changed by %d and now = %s\n", fd, user -> buf);
+        execCmd(user);
         user -> cnt = 0;
     }
     if(res == 0)
@@ -100,12 +171,15 @@ int cmdFromPlayer(int fd, usr * list)
 
 usr * addUsr(usr * list, int fd)
 {
+    int i;
     usr * tmp = malloc(sizeof(* tmp));
     tmp -> next = list;
     tmp -> fd = fd;
     tmp -> bufsize = 16;
     tmp -> cnt = 0;
     tmp -> money = 0;
+    for(i = 0; i < 5; i++)
+        tmp -> nums[i] = 0;
     tmp -> buf = calloc(tmp -> bufsize, 1);
     dprintf(fd, "welcome, user №%d\n", fd - 3);
     return tmp;
@@ -113,6 +187,8 @@ usr * addUsr(usr * list, int fd)
 
 usr * deleteUsr(usr * list, int fd)
 {
+    shutdown(fd, 2);
+    close(fd);
     usr * node = list;
     if(node -> fd == fd){
         list = list -> next;
@@ -213,6 +289,7 @@ void processing(int ls)
 
 int main(int argc, char ** argv)
 {
+    int opt = 1;
     int ls = socket(AF_INET, SOCK_STREAM, 0);
     //int num = atoi(argv[2]);
     int port = atoi(argv[1]);
@@ -220,6 +297,7 @@ int main(int argc, char ** argv)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
+    setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     if (0 != bind(ls, (struct sockaddr *) &addr, sizeof(addr)))
     {
         perror("Smth goes wrong...\n");
