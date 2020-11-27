@@ -12,13 +12,22 @@
 TODO 
 add shutdown for leavers
 */
-int shared = 0;
+
+enum actions{
+    buy,
+    sell,
+    build,
+    produce,
+    end
+};
 
 typedef struct usr{
     int fd;
     char * buf;
     int bufsize;
     int cnt;
+    int money;
+    int flags[5];
     struct usr * next;
 } 
 usr;
@@ -27,7 +36,7 @@ void printUsrs(usr * list)
 {
     usr * tmp = list;
     while(tmp){
-        printf("%d\n", tmp -> fd);
+        printf("%d %d\n", tmp -> fd, tmp -> money);
         tmp = tmp -> next;
     }
 }
@@ -60,7 +69,7 @@ void execCmd(usr * user)
     /**/
     i = 0;
     while(i < user -> cnt){
-        printf("%s\n", &(user -> buf[i]));
+        dprintf(user -> fd, "%s\n", &(user -> buf[i]));
         while(user -> buf[i] != 0)
             i++;
         while(user -> buf[i] == 0)
@@ -74,14 +83,14 @@ int cmdFromPlayer(int fd, usr * list)
     if(user -> cnt == user -> bufsize - 1)
         user -> buf = extendBuf(&user);
 
-    //printf("usr = %d; %s; %d\n", user -> fd, user -> buf, user -> cnt);
     int res = read(fd, &(user -> buf[user -> cnt]), 1);
+    printf("usr = %d; %s; %d read = %d\n", user -> fd, user -> buf, user -> cnt, res);
     user -> cnt ++;
-    
+    /**/user -> money = 100;
     if(user -> buf[user -> cnt - 1] == '\n'){
         execCmd(user);
         user -> buf[user -> cnt] = 0;
-        dprintf(fd, "buff was changed by %d and now = %s\n", fd, user -> buf);
+        //dprintf(fd, "buff was changed by %d and now = %s\n", fd, user -> buf);
         user -> cnt = 0;
     }
     if(res == 0)
@@ -96,8 +105,9 @@ usr * addUsr(usr * list, int fd)
     tmp -> fd = fd;
     tmp -> bufsize = 16;
     tmp -> cnt = 0;
+    tmp -> money = 0;
     tmp -> buf = calloc(tmp -> bufsize, 1);
-    dprintf(fd, "welcome, user №%d\n", fd);
+    dprintf(fd, "welcome, user №%d\n", fd - 3);
     return tmp;
 }
 
@@ -119,15 +129,15 @@ usr * deleteUsr(usr * list, int fd)
             usr * tmp = node -> next;
             node -> next = node -> next -> next;
             /**/
-            printf("thats fd = %d\n", tmp -> fd);
+            //printf("thats fd = %d\n", tmp -> fd);
             free(tmp);
         }
-        printf("DBG\n");
-        printUsrs(node);/*DBG*/
+        //printf("DBG\n");
+        //printUsrs(node);/*DBG*/
         return node;
     }
-    printf("DBG\n");
-    printUsrs(list);/*DBG*/
+    //printf("DBG\n");
+    //printUsrs(list);/*DBG*/
     return list;
 }
 
@@ -175,22 +185,21 @@ void processing(int ls)
         }
         res = select(max_d + 1, &readfds, NULL, NULL, NULL);
         if(res < 1)
-            perror("Err in select()");
+            perror("Err in select()\n");
         if(FD_ISSET(ls, &readfds)){
             fd = accept(ls, NULL, NULL);
-            if (fd != -1){
+            if (fd != -1)
                 players = addUsr(players, fd);
-            }
-            else{
-                perror("Err in accept()");
-            }
+            else
+                perror("Err in accept()\n");
         }
         tmp = players;
+        disconn = NULL;
         while(tmp){
             fd = tmp -> fd;
             if(FD_ISSET(fd, &readfds)){
                 res = cmdFromPlayer(fd, players);
-                if(res == -1){/**/
+                if(res == 0){/**/
                     disconn = addUsr(disconn, fd);
                     printf("was here\n");
                 }
@@ -213,11 +222,11 @@ int main(int argc, char ** argv)
     addr.sin_addr.s_addr = INADDR_ANY;
     if (0 != bind(ls, (struct sockaddr *) &addr, sizeof(addr)))
     {
-        perror("Smth goes wrong...");
+        perror("Smth goes wrong...\n");
         exit(1);
     }
     if (-1 == listen(ls, 5)) {
-        perror("Smth goes wrong...");
+        perror("Smth goes wrong...\n");
         exit(1);
     }
     processing(ls);
