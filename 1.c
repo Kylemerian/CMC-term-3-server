@@ -8,10 +8,6 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
-/*
-TODO 
-add shutdown for leavers
-*/
 
 enum actions{
     buy,
@@ -21,24 +17,64 @@ enum actions{
     end
 };
 
+enum resources{
+    money,
+    raw,
+    production,
+    factories
+};
+
+typedef struct gm{
+    int lvl;
+    int isStarted;
+    int players;
+    int month;
+    int priceRaw;
+    int priceProd;
+}
+gm;
+
 typedef struct usr{
     int fd;
     char * buf;
     int bufsize;
     int cnt;
-    int money;
+    int resources[4];
     int nums[5];
+    int isBankrupt;
     struct usr * next;
 } 
 usr;
+
+gm * init(gm * game)
+{
+    gm * tmp = malloc(sizeof(* tmp));
+    tmp -> lvl = 3;
+    tmp -> isStarted = 0;
+    tmp -> players = 0;
+    tmp -> priceProd = 5500;
+    tmp -> priceRaw = 500;
+    tmp -> month = 1;
+    return tmp;
+}
 
 void printUsrs(usr * list)
 {
     usr * tmp = list;
     while(tmp){
-        printf("%d %d\n", tmp -> fd, tmp -> money);
+        printf("%d %d\n", tmp -> fd, tmp -> resources[money]);
         tmp = tmp -> next;
     }
+}
+
+void printHelp(int fd)
+{
+    const char s1[] = ">> buy [num]       buy [num] raw";
+    const char s2[] = ">> sell [num]      sell [num] production";
+    const char s3[] = ">> produce [num]   produce [num] production";
+    const char s4[] = ">> build [num]     build [num] factories";
+    const char s5[] = ">> end turn        end current turn";
+    dprintf(fd, "%s\n%s\n%s\n%s\n%s\n", s1, s2, s3, s4, s5);
 }
 
 usr * findUsr(int fd , usr * list)
@@ -62,7 +98,6 @@ int countWords(char * s, int maxlen)
 {
     int i = 0;
     int cnt = 0;
-    /**/printf("len str = %d\n", maxlen);
     while(i < maxlen){
         if(s[i] == 0)
             while(s[i] == 0)
@@ -75,8 +110,9 @@ int countWords(char * s, int maxlen)
     return cnt - 1;
 }
 
-void isCorrect(char ** arg, usr * user)
+void isCorrect(char ** arg, usr * user, gm * game)
 {
+    int i;
     const char * cmds[6];
     cmds[0] = "buy";
     cmds[1] = "sell";
@@ -84,44 +120,28 @@ void isCorrect(char ** arg, usr * user)
     cmds[3] = "produce";
     cmds[4] = "end";
     cmds[5] = "turn";
-    /**/printf("%s %s\n", arg[0], arg[1]);
-    if(!strcmp(arg[0], cmds[0])){
-        int res = sscanf(arg[1], "%d", &user -> nums[buy]);
-        if(res)
-            dprintf(user -> fd, "%d OK\n", user -> nums[buy]);
-        else
-            dprintf(user -> fd, "Not OK\n");
-    }
-    if(!strcmp(arg[0], cmds[1])){
-        int res = sscanf(arg[1], "%d", &user -> nums[sell]);
-        if(res)
-            dprintf(user -> fd, "%d OK\n", user -> nums[sell]);
-        else
-            dprintf(user -> fd, "Not OK\n");
-    }
-    if(!strcmp(arg[0], cmds[2])){
-        int res = sscanf(arg[1], "%d", &user -> nums[build]);
-        if(res)
-            dprintf(user -> fd, "%d OK\n", user -> nums[build]);
-        else
-            dprintf(user -> fd, "Not OK\n");
-    }
-    if(!strcmp(arg[0], cmds[3])){
-        int res = sscanf(arg[1], "%d", &user -> nums[produce]);
-        if(res)
-            dprintf(user -> fd, "%d OK\n", user -> nums[produce]);
-        else
-            dprintf(user -> fd, "Not OK\n");
+    /**/printf("User %d : %s %s\n", user -> fd - 3, arg[0], arg[1]);
+    for(i = 0; i < 4; i++){
+        if(!strcmp(arg[0], cmds[i])){
+            int res = sscanf(arg[1], "%d", &user -> nums[i]);
+            if(res && !(user -> nums[end]))//
+                dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> nums[i]);
+            else
+                dprintf(user -> fd, ">> Incorrect input OR you end turn before\n");
+            break;
+        }
+        else if(i == 3 && strcmp(arg[0], cmds[4]))
+            dprintf(user -> fd, ">> Wrong command, print \"help\" for help\n");
     }
     if(!strcmp(arg[0], cmds[4])){
         if(!strcmp(arg[1], cmds[5]))
             user -> nums[end] = 1;
         else
-            dprintf(user -> fd, "%d Not OK\n", user -> nums[end]);
+            dprintf(user -> fd, ">> Maybe you would like \"end turn\"?\n");
     }
 }
 
-void execCmd(usr * user)
+void execCmd(usr * user, gm * game)
 {
     int i;
     char * arg[2];
@@ -130,7 +150,17 @@ void execCmd(usr * user)
             user -> buf[i] = 0;
     }
     int numWords = countWords(user -> buf, user -> cnt);
-    if(numWords == 2){
+    if(numWords == 1){
+        i = 0;
+        while(user -> buf[i] == 0)
+            i++;
+        arg[0] =  &(user -> buf[i]);
+        if(!strcmp("help", arg[0]))
+            printHelp(user -> fd);
+        else
+            dprintf(user -> fd, ">> Wrong command, print \"help\" for help\n");
+    }
+    else if(numWords == 2){
         i = 0;
         while(user -> buf[i] == 0)
             i++;
@@ -140,28 +170,25 @@ void execCmd(usr * user)
         while(user -> buf[i] == 0)
             i++;
         arg[1] = &(user -> buf[i]);
-        isCorrect(arg, user);
+        isCorrect(arg, user, game);
     }
     else{
-        printf("a few args = %d\n", numWords);
+        dprintf(user -> fd, ">> Wrong command, print \"help\" for help\n");
     }
 
 }
 
-int cmdFromPlayer(int fd, usr * list)
+int cmdFromPlayer(int fd, usr * list, gm * game)
 {
     usr * user = findUsr(fd, list);
     if(user -> cnt == user -> bufsize - 1)
         user -> buf = extendBuf(&user);
 
     int res = read(fd, &(user -> buf[user -> cnt]), 1);
-    //printf("usr = %d; %s; %d read = %d\n", user -> fd, user -> buf, user -> cnt, res);
     user -> cnt++;
-    //user -> money = 100;*/
     if(user -> buf[user -> cnt - 1] == '\n'){
         user -> buf[user -> cnt] = 0;
-        //dprintf(fd, "buff was changed by %d and now = %s\n", fd, user -> buf);
-        execCmd(user);
+        execCmd(user, game);
         user -> cnt = 0;
     }
     if(res == 0)
@@ -177,18 +204,20 @@ usr * addUsr(usr * list, int fd)
     tmp -> fd = fd;
     tmp -> bufsize = 16;
     tmp -> cnt = 0;
-    tmp -> money = 0;
+    tmp -> resources[money] = 10000;
+    tmp -> resources[raw] = 4;
+    tmp -> resources[factories] = 2;
+    tmp -> resources[production] = 2;
+    tmp -> isBankrupt = 0;
     for(i = 0; i < 5; i++)
         tmp -> nums[i] = 0;
     tmp -> buf = calloc(tmp -> bufsize, 1);
-    dprintf(fd, "welcome, user №%d\n", fd - 3);
+    dprintf(fd, ">> Welcome, user №%d\n", fd - 3);
     return tmp;
 }
 
 usr * deleteUsr(usr * list, int fd)
 {
-    shutdown(fd, 2);
-    close(fd);
     usr * node = list;
     if(node -> fd == fd){
         list = list -> next;
@@ -204,16 +233,10 @@ usr * deleteUsr(usr * list, int fd)
         else{
             usr * tmp = node -> next;
             node -> next = node -> next -> next;
-            /**/
-            //printf("thats fd = %d\n", tmp -> fd);
             free(tmp);
         }
-        //printf("DBG\n");
-        //printUsrs(node);/*DBG*/
         return node;
     }
-    //printf("DBG\n");
-    //printUsrs(list);/*DBG*/
     return list;
 }
 
@@ -227,6 +250,16 @@ void freeMem(usr * list)
     }
 }
 
+int endTurn(usr * players){
+    usr * tmp = players;
+    int res = 1;
+    while(tmp){
+        res *= tmp -> nums[end];
+        tmp = tmp -> next;
+    }
+    return res;
+}
+
 usr * updateUsrs(usr * players, usr * disconn)
 {
     usr * tmp = disconn;
@@ -237,15 +270,64 @@ usr * updateUsrs(usr * players, usr * disconn)
         tmp = tmp -> next;
     }
     freeMem(disconn);
+    
     return players;
+}
+
+usr * changeValues(usr * users)
+{
+    usr * tmp = users;
+    while(tmp){
+        tmp -> nums[end] = 0;
+        tmp = tmp -> next;
+    } 
+    tmp = users;
+    while(tmp){
+        tmp -> resources[money] -= (300 * tmp -> resources[raw] + 500 * 
+            tmp -> resources[production] + 1000 * tmp -> resources[factories]);
+        tmp = tmp -> next;
+    }
+    return tmp;
+}
+
+void updateGame(gm * game, usr * users)
+{
+    users = changeValues(users);
+}
+
+void printTurnEach(usr * players, int fd)
+{
+    const char s1[] = ">> User #";
+    const char s2[] = ">>   Money : ";
+    const char s3[] = ">>   Raw : ";
+    const char s4[] = ">>   Production : ";
+    const char s5[] = ">>   Factories : ";
+    usr * tmp = players;
+    while(tmp){
+        dprintf(fd, "%s%d\n%s%d\n%s%d\n%s%d\n%s%d\n", s1, tmp -> fd - 3, s2, 
+            tmp -> resources[money], s3, tmp -> resources[raw], s4, 
+            tmp -> resources[production], s5, tmp -> resources[factories]);
+        tmp = tmp -> next;
+    }
+}
+
+void printTurn(usr * players, gm * game)
+{
+    usr * tmp = players;
+    while(tmp){
+        printTurnEach(players, tmp -> fd);
+        tmp = tmp -> next;
+    }
 }
 
 void processing(int ls)
 {
     int max_d, fd, res;
+    gm * game = NULL;
     usr * players = NULL;
     usr * tmp = NULL;
     usr * disconn = NULL;
+    game = init(game);
     while(1){
         fd_set readfds;
         max_d = ls;
@@ -261,29 +343,32 @@ void processing(int ls)
         }
         res = select(max_d + 1, &readfds, NULL, NULL, NULL);
         if(res < 1)
-            perror("Err in select()\n");
+            perror(">> Err in select()\n");
         if(FD_ISSET(ls, &readfds)){
             fd = accept(ls, NULL, NULL);
             if (fd != -1)
                 players = addUsr(players, fd);
             else
-                perror("Err in accept()\n");
+                perror(">> Err in accept()\n");
         }
         tmp = players;
         disconn = NULL;
         while(tmp){
             fd = tmp -> fd;
             if(FD_ISSET(fd, &readfds)){
-                res = cmdFromPlayer(fd, players);
-                if(res == 0){/**/
+                res = cmdFromPlayer(fd, players, game);
+                if(res == 0){
                     disconn = addUsr(disconn, fd);
-                    printf("was here\n");
+                    printf(">> Smbd disconnected...\n");
                 }
             }
             tmp = tmp -> next;
         }
+        if(endTurn(players)){
+            updateGame(game, players);
+            printTurn(players, game);
+        }
         players = updateUsrs(players, disconn);
-        printUsrs(players);/**/
     }
 }
 
@@ -300,11 +385,11 @@ int main(int argc, char ** argv)
     setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     if (0 != bind(ls, (struct sockaddr *) &addr, sizeof(addr)))
     {
-        perror("Smth goes wrong...\n");
+        perror(">> Smth goes wrong...\n");
         exit(1);
     }
     if (-1 == listen(ls, 5)) {
-        perror("Smth goes wrong...\n");
+        perror(">> Smth goes wrong...\n");
         exit(1);
     }
     processing(ls);
