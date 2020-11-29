@@ -41,6 +41,7 @@ typedef struct usr{
     int cnt;
     int resources[4];
     int reqs[5];
+    int sums[4];
     int isBankrupt;
     struct usr * next;
 } 
@@ -78,9 +79,10 @@ void printHelp(int fd)
     dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5);
 }
 
-void printStart(usr * users)
+void printStart(usr * users, gm * game)
 {
     usr * tmp = users;
+    game -> isStarted = 1;
     while(tmp){
         dprintf(tmp -> fd, ">> Game started!\n");
         tmp = tmp -> next;
@@ -121,80 +123,128 @@ int countWords(char * s, int maxlen)
     return cnt - 1;
 }
 
-void isCorrect(char ** arg, usr * user, gm * game)
+char ** getArgsCmd(char * buf, int len, int numW)
 {
-    int i;
-    const char * cmds[6];
-    cmds[0] = "buy";
-    cmds[1] = "sell";
-    cmds[2] = "build";
-    cmds[3] = "produce";
-    cmds[4] = "end";
-    cmds[5] = "turn";
-    /**/printf("User %d : %s %s\n", user -> fd - 3, arg[0], arg[1]);
-    for(i = 0; i < 4; i++){
-        if(!strcmp(arg[0], cmds[i])){
-            int res = sscanf(arg[1], "%d", &user -> reqs[i]);
-            if(res && !(user -> reqs[end]))//
-                dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
-            else
-                dprintf(user -> fd, ">> Incorrect input OR you end turn before\n");
-            break;
-        }
-        else if(i == 3 && strcmp(arg[0], cmds[4]))
-            dprintf(user -> fd, ">> Wrong command, print \"help\" for help\n");
+    char ** arg = malloc(numW * sizeof(* arg));
+    int k;
+    int i = 0;
+    for(k = 0; k < numW; k++){
+        while(buf[i] == 0)
+            i++;
+        arg[k] = &(buf[i]);
+        while(buf[i] != 0)
+            i++;
     }
-    if(!strcmp(arg[0], cmds[4])){
-        if(!strcmp(arg[1], cmds[5]))
-            user -> reqs[end] = 1;
-        else
-            dprintf(user -> fd, ">> Maybe you would like \"end turn\"?\n");
-    }
+    return arg;
 }
 
-void execCmd(usr * user, gm ** game, usr * list)
+void execNotStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
+{
+    if(numW == 1){
+        if(!strcmp("help", arg[0])){
+            printHelp(user -> fd);
+        }
+        else if(!strcmp("start", arg[0])){
+            printStart(list, game);
+        }
+        else
+            dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+    }
+    else
+        dprintf(user -> fd, ">> Incorrect input, try \"help\" OR start game\n");
+}
+
+void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
+{
+    if(numW == 1){
+        if(!strcmp("help", arg[0])){
+            printHelp(user -> fd);
+        }
+        else if(!strcmp("start", arg[0])){
+            dprintf(user -> fd, ">> Game already started\n");
+        }
+        else
+            dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+    }
+    else if(numW == 2){
+        if(!strcmp("end", arg[0])){
+            if(!strcmp("turn", arg[1]))
+                user -> reqs[end] = 1;
+            else
+                dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
+        }
+        else{
+            for(int i = 2; i < 4; i++){
+                if(!strcmp("build", arg[0])){
+                    int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
+                    if(res == 0)
+                        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                    else
+                        dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
+                    break;
+                }
+
+                else if(!strcmp("produce", arg[0])){
+                    int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
+                    if(res == 0)
+                        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                    else
+                        dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
+                    break;
+                }
+                else if(i == 3)
+                    dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
+
+            }
+        }
+    }
+    else if(numW == 3){
+        for(int i = 0; i < 2; i++){
+                if(!strcmp("buy", arg[0])){
+                    int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
+                    int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
+                    if(res && res2)
+                        dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
+                    else{
+                        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                        user -> reqs[i] = 0;
+                    }
+                    break;
+                }
+                else if(!strcmp("sell", arg[0])){
+                    int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
+                    int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
+                    if(res && res2)
+                        dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
+                    else{
+                        user -> reqs[i] = 0;
+                        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                    }
+                    break;
+                }
+                else if(i == 1)
+                    dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
+
+        }
+    }
+    else
+        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+}
+
+void execCmd(usr * user, gm * game, usr * list)
 {
     int i;
-    char * arg[2];
+    char ** arg;
     for(i = 0; i < user -> cnt; i++){
         if(user -> buf[i] == ' ' || user -> buf[i] == '\t' || user -> buf[i] == '\r')
             user -> buf[i] = 0;
     }
     int numWords = countWords(user -> buf, user -> cnt);
-    if(numWords == 1){
-        i = 0;
-        while(user -> buf[i] == 0)
-            i++;
-        arg[0] =  &(user -> buf[i]);
-        if(!strcmp("help", arg[0]))
-            printHelp(user -> fd);
-        else if(!strcmp("start", arg[0])){
-            if((*game) -> isStarted == 0){
-                (*game) -> isStarted = 1;
-                printStart(list);
-            }
-            else
-                dprintf(user -> fd, ">> Game has already been started\n");
-        }
-        else
-            dprintf(user -> fd, ">> Wrong command, print \"help\" for help\n");
-    }
-    else if(numWords == 2){
-        i = 0;
-        while(user -> buf[i] == 0)
-            i++;
-        arg[0] =  &(user -> buf[i]);
-        while(user -> buf[i] != 0)
-            i++;
-        while(user -> buf[i] == 0)
-            i++;
-        arg[1] = &(user -> buf[i]);
-        isCorrect(arg, user, *game);
-    }
-    else{
-        dprintf(user -> fd, ">> Wrong command, print \"help\" for help\n");
-    }
-
+    arg = getArgsCmd(user -> buf, user -> cnt, numWords);
+    if(game -> isStarted)
+        execStarted(arg, user, numWords, list, game);
+    else
+        execNotStarted(arg, user, numWords, list, game);
 }
 
 int cmdFromPlayer(int fd, usr * list, gm ** game)
@@ -207,7 +257,7 @@ int cmdFromPlayer(int fd, usr * list, gm ** game)
     user -> cnt++;
     if(user -> buf[user -> cnt - 1] == '\n'){
         user -> buf[user -> cnt] = 0;
-        execCmd(user, game, list);
+        execCmd(user, *game, list);
         user -> cnt = 0;
     }
     if(res == 0)
@@ -227,6 +277,8 @@ usr * addUsr(usr * list, int fd)
     tmp -> resources[raw] = 4;
     tmp -> resources[factories] = 2;
     tmp -> resources[production] = 2;
+    tmp -> sums[2] = 2500;
+    tmp -> sums[3] = 2000;
     tmp -> isBankrupt = 0;
     for(i = 0; i < 5; i++)
         tmp -> reqs[i] = 0;
@@ -309,11 +361,33 @@ usr * changeValues(usr * users)
     return tmp;
 }
 
+usr * trading(usr * users, gm * game)
+{
+    int i;
+    usr * tmp = users;
+    while(tmp){
+        tmp -> resources[money] -= users -> reqs[buy] * users -> sums[buy];
+        tmp -> resources[raw] += (users -> reqs[raw] - users -> reqs[produce]);
+        tmp -> resources[money] += users -> reqs[sell] * users -> sums[sell];
+        tmp -> resources[production] -= users -> reqs[produce];
+        tmp -> resources[money] -= users -> reqs[build] * users -> sums[build];
+        tmp -> resources[factories] += users -> reqs[build];
+        tmp -> resources[money] -= users -> reqs[produce] * users -> sums[produce];
+        for(i = 0; i < 5; i++)
+            users -> reqs[i] = 0;
+        for(i = 0; i < 2; i++)
+            users -> sums[i] = 0;
+        tmp = tmp -> next;
+    }
+    return users;
+}
+
 void updateGame(gm * game, usr * users)
 {
     game -> month ++;
     /*changeLvl()*/
-    //game = trading(game, users);
+   
+    users = trading(users, game);
 
     users = changeValues(users);
 }
@@ -393,7 +467,7 @@ void processing(int ls)
                 res = cmdFromPlayer(fd, players, &game);
                 if(res == 0){
                     disconn = addUsr(disconn, fd);
-                    printf(">> User %d disconnected...\n", fd - 3);
+                    printf("User %d disconnected...\n", fd - 3);
                 }
             }
             tmp = tmp -> next;
