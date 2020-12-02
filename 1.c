@@ -20,8 +20,8 @@ enum actions{
 enum resources{
     money,
     raw,
+    factories,
     production,
-    factories
 };
 
 typedef struct gm{
@@ -70,12 +70,12 @@ void printUsrs(usr * list)
 
 void printHelp(int fd)
 {
-    const char s0[] = ">> start           start game";
-    const char s1[] = ">> buy [num]       buy [num] raw";
-    const char s2[] = ">> sell [num]      sell [num] production";
-    const char s3[] = ">> produce [num]   produce [num] production";
-    const char s4[] = ">> build [num]     build [num] factories";
-    const char s5[] = ">> end turn        end current turn";
+    const char s0[] = ">> start                  start game";
+    const char s1[] = ">> buy [num] [price]      buy [num] raw";
+    const char s2[] = ">> sell [num] [price]     sell [num] production";
+    const char s3[] = ">> produce [num]          produce [num] production";
+    const char s4[] = ">> build [num]            build [num] factories";
+    const char s5[] = ">> end turn               end current turn";
     dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5);
 }
 
@@ -154,6 +154,11 @@ void execNotStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
         dprintf(user -> fd, ">> Incorrect input, try \"help\" OR start game\n");
 }
 
+int notEnoughMoney(int curMoney, int price, int num)
+{
+    return (curMoney - price * num < 0);
+}
+
 void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
 {
     if(numW == 1){
@@ -177,8 +182,10 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
             for(int i = 2; i < 4; i++){
                 if(!strcmp("build", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                    if(res == 0)
+                    if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[factories], user -> reqs[build])){
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                        user -> reqs[i] = 0;
+                    }
                     else
                         dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
                     break;
@@ -186,8 +193,10 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
 
                 else if(!strcmp("produce", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                    if(res == 0)
+                    if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce])){
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                        user -> reqs[i] = 0;
+                    }
                     else
                         dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
                     break;
@@ -203,7 +212,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                 if(!strcmp("buy", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2)
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && !notEnoughMoney(user -> resources[money], user -> sums[buy], user -> reqs[buy]))
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
@@ -214,7 +223,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                 else if(!strcmp("sell", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2)
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw])
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         user -> reqs[i] = 0;
@@ -277,8 +286,8 @@ usr * addUsr(usr * list, int fd)
     tmp -> resources[raw] = 4;
     tmp -> resources[factories] = 2;
     tmp -> resources[production] = 2;
-    tmp -> sums[2] = 2500;
-    tmp -> sums[3] = 2000;
+    tmp -> sums[production] = 2000;
+    tmp -> sums[factories] = 2500;
     tmp -> isBankrupt = 0;
     for(i = 0; i < 5; i++)
         tmp -> reqs[i] = 0;
@@ -484,7 +493,10 @@ int main(int argc, char ** argv)
 {
     int opt = 1;
     int ls = socket(AF_INET, SOCK_STREAM, 0);
-    //int num = atoi(argv[2]);
+    if(argc != 2){
+        perror(">> Need only 1 arg = port\n");
+        exit(1);
+    }
     int port = atoi(argv[1]);
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
