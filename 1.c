@@ -31,6 +31,8 @@ typedef struct gm{
     int month;
     int priceRaw;
     int priceProd;
+    double coeffRaw;
+    double coeffProd;
 }
 gm;
 
@@ -55,6 +57,8 @@ gm * init(gm * game)
     tmp -> players = 0;
     tmp -> priceProd = 5500;
     tmp -> priceRaw = 500;
+    tmp -> coeffProd = 2.0;
+    tmp -> coeffRaw = 2.0;
     tmp -> month = 1;
     return tmp;
 }
@@ -357,11 +361,11 @@ usr * changeValues(usr * users)
         tmp = tmp -> next;
     } 
     tmp = users;
-    /*while(tmp){
+    while(tmp){
         tmp -> resources[money] -= (300 * tmp -> resources[raw] + 500 * 
             tmp -> resources[production] + 1000 * tmp -> resources[factories]);
         tmp = tmp -> next;
-    }*/
+    }
     return users;
 }
 
@@ -390,14 +394,71 @@ usr * trading(usr * users, gm * game)
     return users;
 }
 
+gm * changeLvl(gm * game)
+{
+    int i;
+    const int rands[5][5] = {
+        {4, 8, 10, 11, 12},
+        {3, 7, 10, 11, 12},
+        {1, 4, 8, 11, 12},
+        {1, 2, 5, 9, 12},
+        {1, 2, 4, 8, 12}
+    };
+    int res = 1 + (int)(12.0 * rand()/(RAND_MAX+1.0));
+    int line = game -> lvl - 1;
+    for(i = 0; i < 5; i++)
+        if(rands[line][i] >= res)
+            game -> lvl = i + 1;
+    return game;
+}
+
+gm * setPrices(gm * game)
+{
+    int prods[5] = {6500, 6000, 5500, 5000, 4500};
+    int raw[5] = {800, 650, 500, 400, 300};
+    double coeffRaw[5] = {1.0, 1.5, 2.0, 2.5, 3.0};
+    double coeffProd[5] = {3.0, 2.5, 2.0, 1.5, 1.0};
+    game -> priceProd = prods[game -> lvl - 1];
+    game -> priceRaw = raw[game -> lvl - 1];
+    game -> coeffRaw = coeffRaw[game -> lvl - 1];
+    game -> coeffProd = coeffProd[game -> lvl - 1];
+    return game;
+}
+
+int getNumUsers(usr * users)
+{
+    int i = 0;
+    usr * tmp = users;
+    while(tmp){
+        i++;
+        tmp = tmp -> next;
+    }
+    return i;
+}
+
+usr * setBankrupts(usr * users)
+{
+    usr * tmp = users;
+    while(tmp){
+        if(tmp -> resources[money] < 0 && tmp ->isBankrupt == 0){
+            tmp -> isBankrupt = 1;
+            dprintf(tmp -> fd, "\n>> You are bankrupt\n\n");
+        }
+        tmp = tmp -> next;
+    }
+    return users;
+}
+
 void updateGame(gm * game, usr * users)
 {
-    game -> month ++;
-    /*changeLvl()*/
-   
+    game = setPrices(game);
+    game -> players = getNumUsers(users);
     users = trading(users, game);
-
     users = changeValues(users);
+    users = setBankrupts(users);
+    game -> month++;
+    game = changeLvl(game);
+    
 }
 
 void printTurnEach(usr * players, int fd)
@@ -409,9 +470,10 @@ void printTurnEach(usr * players, int fd)
     const char s5[] = ">>   Factories : ";
     usr * tmp = players;
     while(tmp){
-        dprintf(fd, "%s%d\n%s%d\n%s%d\n%s%d\n%s%d\n", s1, tmp -> fd - 3, s2, 
-            tmp -> resources[money], s3, tmp -> resources[raw], s4, 
-            tmp -> resources[production], s5, tmp -> resources[factories]);
+        if(!tmp -> isBankrupt)
+            dprintf(fd, "%s%d\n%s%d\n%s%d\n%s%d\n%s%d\n", s1, tmp -> fd - 3, s2, 
+                tmp -> resources[money], s3, tmp -> resources[raw], s4, 
+                tmp -> resources[production], s5, tmp -> resources[factories]);
         tmp = tmp -> next;
     }
 }
