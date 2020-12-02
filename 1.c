@@ -44,6 +44,7 @@ typedef struct usr{
     int resources[4];
     int reqs[5];
     int sums[4];
+    int building[4];
     int isBankrupt;
     struct usr * next;
 } 
@@ -79,8 +80,9 @@ void printHelp(int fd)
     const char s2[] = ">> sell [num] [price]     sell [num] production";
     const char s3[] = ">> produce [num]          produce [num] production";
     const char s4[] = ">> build [num]            build [num] factories";
-    const char s5[] = ">> end turn               end current turn";
-    dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5);
+    const char s5[] = ">> player [num]           show info about player#[num]";
+    const char s6[] = ">> end turn               end current turn";
+    dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5, s6);
 }
 
 void printStart(usr * users, gm * game)
@@ -163,6 +165,36 @@ int notEnoughMoney(int curMoney, int price, int num)
     return (curMoney - price * num < 0);
 }
 
+int isCorrectUser(usr * user, usr * list, int key)
+{
+    usr * tmp = list;
+    while(tmp){
+        if(key == tmp -> fd - 3)
+            return 1;
+        tmp = tmp -> next;
+    }
+    return 0;
+}
+
+void printUserInfo(usr * user, usr * list, int key)
+{
+    const char s1[] = ">> User #";
+    const char s2[] = ">>   Money : ";
+    const char s3[] = ">>   Raw : ";
+    const char s4[] = ">>   Production : ";
+    const char s5[] = ">>   Factories : ";
+    usr * tmp = list;
+    while(tmp){
+        if(key == tmp -> fd - 3)
+            break;
+        tmp = tmp -> next;
+    }
+    dprintf(user -> fd, "%s%d\n%s%d\n%s%d\n%s%d\n%s%d\n", s1, key, s2, 
+        tmp -> resources[money], s3, tmp -> resources[raw], s4, 
+        tmp -> resources[production], s5, tmp -> resources[factories]);
+        
+}
+
 void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
 {
     if(numW == 1){
@@ -182,21 +214,29 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
             else
                 dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
         }
+        else if(!strcmp("player", arg[0])){
+            int bf;
+            int res = sscanf(arg[1], "%d", &bf);
+            if(res == 0 || !isCorrectUser(user, list, bf))
+                dprintf(user -> fd, ">> Incorrect input, try \"help\" or user doesn't exist\n");
+            else
+                printUserInfo(user, list, bf);
+        }
         else{
             int i = 2;
             if(!strcmp("build", arg[0])){
                 int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[factories], user -> reqs[build])){
+                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[factories], user -> reqs[build]) || user -> reqs[end]){
                     dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
                     user -> reqs[i] = 0;
                 }
                 else
                     dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
             }
-            else if(!strcmp("produce", arg[0])){                    /*check for raw*/
+            else if(!strcmp("produce", arg[0])){
                 i++;
                 int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce]) || user -> resources[raw] < user -> reqs[produce]){
+                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce]) || user -> resources[raw] < user -> reqs[produce] || user -> reqs[end]){
                     dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
                     user -> reqs[i] = 0;
                 }
@@ -214,7 +254,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                 if(!strcmp("buy", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && !notEnoughMoney(user -> resources[money], user -> sums[buy], user -> reqs[buy]))
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && !notEnoughMoney(user -> resources[money], user -> sums[buy], user -> reqs[buy]) && !user -> reqs[end])
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
@@ -225,7 +265,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                     i++;
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw])
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw] && !user -> reqs[end])
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         user -> reqs[i] = 0;
@@ -288,6 +328,8 @@ usr * addUsr(usr * list, int fd)
     tmp -> sums[production] = 2000;
     tmp -> sums[factories] = 2500;
     tmp -> isBankrupt = 0;
+    for(i = 0; i < 4; i++)
+        tmp -> building[i] = 0;
     for(i = 0; i < 5; i++)
         tmp -> reqs[i] = 0;
     tmp -> buf = calloc(tmp -> bufsize, 1);
@@ -379,8 +421,10 @@ usr * trading(usr * users, gm * game)
         tmp -> resources[money] += tmp -> reqs[sell] * tmp -> sums[sell];       /*money for sell*/
         tmp -> resources[production] += tmp -> reqs[produce];                     /*production*/
         tmp -> resources[money] -= tmp -> reqs[build] * tmp -> sums[build];     /*money for build*/
-        tmp -> resources[factories] += tmp -> reqs[build];                        /*build factory*/
+        tmp -> resources[factories] += tmp -> building[3];                        /*build factory*/
         tmp -> resources[money] -= tmp -> reqs[produce] * tmp -> sums[produce]; /*money for produce*/
+        tmp -> resources[money] -= tmp -> building[3] * tmp -> sums[build];     /*money for end build*/
+
         
         printf("#%d Reqs :  buy = %d sell = %d prod = %d build = %d\n", tmp -> fd - 3, tmp -> reqs[buy], tmp -> reqs[sell], tmp -> reqs[produce], tmp -> reqs[build]);
 
@@ -449,16 +493,35 @@ usr * setBankrupts(usr * users)
     return users;
 }
 
+usr * shiftBuild(usr * user)
+{
+    int i;
+    for(i = 3; i > 0; i--)
+        user -> building[i] = user -> building[i - 1];
+    user -> building[0] = user -> reqs[build];
+    return user;
+}
+
+usr * updateBuilds(usr * users)
+{
+    usr * tmp = users;
+    while(tmp){
+        tmp = shiftBuild(tmp);
+        tmp = tmp -> next;
+    }
+    return users;
+}
+
 void updateGame(gm * game, usr * users)
 {
     game = setPrices(game);
     game -> players = getNumUsers(users);
+    users = updateBuilds(users);
     users = trading(users, game);
     users = changeValues(users);
     users = setBankrupts(users);
     game -> month++;
     game = changeLvl(game);
-    
 }
 
 void printTurnEach(usr * players, int fd)
@@ -474,6 +537,7 @@ void printTurnEach(usr * players, int fd)
             dprintf(fd, "%s%d\n%s%d\n%s%d\n%s%d\n%s%d\n", s1, tmp -> fd - 3, s2, 
                 tmp -> resources[money], s3, tmp -> resources[raw], s4, 
                 tmp -> resources[production], s5, tmp -> resources[factories]);
+        printf("id = %d build : %d %d %d %d\n", tmp -> fd - 3, tmp -> building[0], tmp -> building[1], tmp -> building[2], tmp -> building[3]);
         tmp = tmp -> next;
     }
 }
@@ -482,6 +546,7 @@ void printTurn(usr * players, gm * game)
 {
     usr * tmp = players;
     while(tmp){
+        dprintf(tmp -> fd, ">> Current month - %d\n", game -> month);
         printTurnEach(players, tmp -> fd);
         tmp = tmp -> next;
     }
