@@ -179,36 +179,34 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                 dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
         }
         else{
-            for(int i = 2; i < 4; i++){
-                if(!strcmp("build", arg[0])){
-                    int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                    if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[factories], user -> reqs[build])){
-                        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
-                        user -> reqs[i] = 0;
-                    }
-                    else
-                        dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
-                    break;
+            int i = 2;
+            if(!strcmp("build", arg[0])){
+                int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
+                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[factories], user -> reqs[build])){
+                    dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                    user -> reqs[i] = 0;
                 }
-
-                else if(!strcmp("produce", arg[0])){
-                    int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                    if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce])){
-                        dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
-                        user -> reqs[i] = 0;
-                    }
-                    else
-                        dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
-                    break;
-                }
-                else if(i == 3)
-                    dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
-
+                else
+                    dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
             }
+            else if(!strcmp("produce", arg[0])){                    /*check for raw*/
+                i++;
+                int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
+                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce]) || user -> resources[raw] < user -> reqs[produce]){
+                    dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
+                    user -> reqs[i] = 0;
+                }
+                else
+                    dprintf(user -> fd, ">> Your request accepted : %s %d\n", arg[0], user -> reqs[i]);
+            }
+            else
+                dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
+
+
         }
     }
     else if(numW == 3){
-        for(int i = 0; i < 2; i++){
+        int i = 0;
                 if(!strcmp("buy", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
@@ -218,9 +216,9 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
                         user -> reqs[i] = 0;
                     }
-                    break;
                 }
                 else if(!strcmp("sell", arg[0])){
+                    i++;
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
                     if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw])
@@ -229,12 +227,9 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                         user -> reqs[i] = 0;
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
                     }
-                    break;
                 }
-                else if(i == 1)
+                else
                     dprintf(user -> fd, ">> Incorrect input, try \"help\"\n"); 
-
-        }
     }
     else
         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
@@ -362,12 +357,12 @@ usr * changeValues(usr * users)
         tmp = tmp -> next;
     } 
     tmp = users;
-    while(tmp){
+    /*while(tmp){
         tmp -> resources[money] -= (300 * tmp -> resources[raw] + 500 * 
             tmp -> resources[production] + 1000 * tmp -> resources[factories]);
         tmp = tmp -> next;
-    }
-    return tmp;
+    }*/
+    return users;
 }
 
 usr * trading(usr * users, gm * game)
@@ -375,17 +370,21 @@ usr * trading(usr * users, gm * game)
     int i;
     usr * tmp = users;
     while(tmp){
-        tmp -> resources[money] -= users -> reqs[buy] * users -> sums[buy];
-        tmp -> resources[raw] += (users -> reqs[raw] - users -> reqs[produce]);
-        tmp -> resources[money] += users -> reqs[sell] * users -> sums[sell];
-        tmp -> resources[production] -= users -> reqs[produce];
-        tmp -> resources[money] -= users -> reqs[build] * users -> sums[build];
-        tmp -> resources[factories] += users -> reqs[build];
-        tmp -> resources[money] -= users -> reqs[produce] * users -> sums[produce];
+        tmp -> resources[money] -= tmp -> reqs[buy] * tmp -> sums[buy];         /*money for buy*/
+        tmp -> resources[raw] += (tmp -> reqs[buy] - tmp -> reqs[sell] - tmp -> reqs[produce]);/*change raw*/
+        tmp -> resources[money] += tmp -> reqs[sell] * tmp -> sums[sell];       /*money for sell*/
+        tmp -> resources[production] += tmp -> reqs[produce];                     /*production*/
+        tmp -> resources[money] -= tmp -> reqs[build] * tmp -> sums[build];     /*money for build*/
+        tmp -> resources[factories] += tmp -> reqs[build];                        /*build factory*/
+        tmp -> resources[money] -= tmp -> reqs[produce] * tmp -> sums[produce]; /*money for produce*/
+        
+        printf("#%d Reqs :  buy = %d sell = %d prod = %d build = %d\n", tmp -> fd - 3, tmp -> reqs[buy], tmp -> reqs[sell], tmp -> reqs[produce], tmp -> reqs[build]);
+
         for(i = 0; i < 5; i++)
-            users -> reqs[i] = 0;
+            tmp -> reqs[i] = 0;
         for(i = 0; i < 2; i++)
-            users -> sums[i] = 0;
+            tmp -> sums[i] = 0;
+        
         tmp = tmp -> next;
     }
     return users;
