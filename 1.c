@@ -82,7 +82,7 @@ void printHelp(int fd)
     const char s4[] = ">> build [num]            build [num] factories";
     const char s5[] = ">> player [num]           show info about player#[num]";
     const char s6[] = ">> end turn               end current turn";
-    const char s7[] = ">> end turn               end current turn";
+    const char s7[] = ">> active                 show active players";
     dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5, s6, s7);
 }
 
@@ -214,7 +214,8 @@ void printOnline(usr * users, int fd)
 {
     usr * tmp = users;
     while(tmp){
-        dprintf(fd, "%d ", tmp -> fd - 3);
+        if(!tmp -> isBankrupt)
+            dprintf(fd, "%d ", tmp -> fd - 3);
         tmp = tmp -> next;
     }
     dprintf(fd, "\n");
@@ -223,7 +224,7 @@ void printOnline(usr * users, int fd)
 void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
 {
     if(numW == 1){
-        if(!strcmp("online", arg[0])){
+        if(!strcmp("active", arg[0])){
             printOnline(list, user -> fd);
         }
         else if(!strcmp("help", arg[0])){
@@ -293,7 +294,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                     i++;
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw] && !user -> reqs[end] && priceRange(arg[0], user -> sums[sell], game))
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw] && !user -> reqs[end] && priceRange(arg[0], user -> sums[sell], game) && !user -> isBankrupt)
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         user -> reqs[i] = 0;
@@ -439,10 +440,60 @@ usr * changeValues(usr * users)
     return users;
 }
 
+void ssort(int * reqs, int * sums, int * id, int * len)
+{
+    int i, j;
+    for(i = 0; i < len - 1; i++){
+        for(j = 0; j < len - (i + 1); j++){
+            if(sums[j] < sums[j + 1]){
+                int tmp = sums[j];
+                sums[j] = sums[j + 1];
+                sums[j + 1] = tmp;
+                int tmp = reqs[j];
+                reqs[j] = reqs[j + 1];
+                reqs[j + 1] = tmp;
+                int tmp = id[j];
+                id[j] = id[j + 1];
+                id[j + 1] = tmp;
+            }
+        }
+    }
+}
+
+usr * doAuction(usr * users, gm * game)
+{
+    int maxRaw = (int) game -> coeffRaw * game -> players;
+    int maxProd = (int) game -> coeffProd * game -> players;
+    int * reqs = malloc(game -> players);
+    int * sums = malloc(game -> players);
+    int * id = malloc(game -> players);
+    usr * tmp = users;
+    int i = 0;
+    while(tmp){
+        reqs[i] = tmp -> reqs[buy];
+        sums[i] = tmp -> sums[buy];
+        id[i] = tmp -> fd;
+        tmp = tmp -> next;
+    }
+    ssort(reqs, sums, id, game -> players);
+    /**/
+
+    int i = 0;
+    while(tmp){
+        reqs[i] = tmp -> reqs[sell];
+        sums[i] = tmp -> sums[sell];
+        id[i] = tmp -> fd;
+        tmp = tmp -> next;
+    }
+    ssort(reqs, sums, id, game -> players);
+    /**/
+}
+
 usr * trading(usr * users, gm * game)
 {
     int i;
     usr * tmp = users;
+    users = doAuction(users, game);
     while(tmp){
         tmp -> resources[money] -= tmp -> reqs[buy] * tmp -> sums[buy];         /*money for buy*/
         tmp -> resources[raw] += (tmp -> reqs[buy] - tmp -> reqs[sell] - tmp -> reqs[produce]);/*change raw*/
@@ -506,7 +557,8 @@ int getNumUsers(usr * users)
     int i = 0;
     usr * tmp = users;
     while(tmp){
-        i++;
+        if(!tmp -> isBankrupt)
+            i++;
         tmp = tmp -> next;
     }
     return i;
@@ -579,7 +631,7 @@ void printTurn(usr * players, gm * game)
     printf("players = %d\n", game -> players);
     usr * tmp = players;
     while(tmp){
-        dprintf(tmp -> fd, ">> Online players - %d\n", game -> players);
+        dprintf(tmp -> fd, ">> Active players - %d\n", game -> players);
         dprintf(tmp -> fd, ">> Current month - %d\n", game -> month);
         dprintf(tmp -> fd, ">> Current level - %d\n", game -> lvl);
         dprintf(tmp -> fd, ">> Next month min price for Raw - %d\n", game -> priceRaw);
