@@ -60,7 +60,7 @@ gm * init(gm * game)
     tmp -> priceRaw = 500;
     tmp -> coeffProd = 2.0;
     tmp -> coeffRaw = 2.0;
-    tmp -> month = 1;
+    tmp -> month = 0;
     return tmp;
 }
 
@@ -82,7 +82,8 @@ void printHelp(int fd)
     const char s4[] = ">> build [num]            build [num] factories";
     const char s5[] = ">> player [num]           show info about player#[num]";
     const char s6[] = ">> end turn               end current turn";
-    dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5, s6);
+    const char s7[] = ">> end turn               end current turn";
+    dprintf(fd, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",s0, s1, s2, s3, s4, s5, s6, s7);
 }
 
 void printStart(usr * users, gm * game)
@@ -195,10 +196,37 @@ void printUserInfo(usr * user, usr * list, int key)
         
 }
 
+int priceRange(char * arg, int req, gm * game)
+{
+    if(!strcmp(arg, "sell")){
+        if(req <= game -> priceProd)
+            return 1;
+        return 0;
+    }
+    else{
+        if(req >= game -> priceRaw)
+            return 1;
+        return 0;
+    }
+}
+
+void printOnline(usr * users, int fd)
+{
+    usr * tmp = users;
+    while(tmp){
+        dprintf(fd, "%d ", tmp -> fd - 3);
+        tmp = tmp -> next;
+    }
+    dprintf(fd, "\n");
+}
+
 void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
 {
     if(numW == 1){
-        if(!strcmp("help", arg[0])){
+        if(!strcmp("online", arg[0])){
+            printOnline(list, user -> fd);
+        }
+        else if(!strcmp("help", arg[0])){
             printHelp(user -> fd);
         }
         else if(!strcmp("start", arg[0])){
@@ -254,7 +282,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                 if(!strcmp("buy", arg[0])){
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && !notEnoughMoney(user -> resources[money], user -> sums[buy], user -> reqs[buy]) && !user -> reqs[end])
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && !notEnoughMoney(user -> resources[money], user -> sums[buy], user -> reqs[buy]) && !user -> reqs[end] && priceRange(arg[0], user -> sums[buy], game))
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
@@ -265,7 +293,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                     i++;
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw] && !user -> reqs[end])
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw] && !user -> reqs[end] && priceRange(arg[0], user -> sums[sell], game))
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         user -> reqs[i] = 0;
@@ -449,10 +477,14 @@ gm * changeLvl(gm * game)
         {1, 2, 4, 8, 12}
     };
     int res = 1 + (int)(12.0 * rand()/(RAND_MAX+1.0));
+    printf("res = %d\n", res);
     int line = game -> lvl - 1;
     for(i = 0; i < 5; i++)
-        if(rands[line][i] >= res)
+        if(rands[line][i] >= res){
             game -> lvl = i + 1;
+            break;
+        }
+    /**/printf("lvl = %d\n", game -> lvl);
     return game;
 }
 
@@ -544,9 +576,14 @@ void printTurnEach(usr * players, int fd)
 
 void printTurn(usr * players, gm * game)
 {
+    printf("players = %d\n", game -> players);
     usr * tmp = players;
     while(tmp){
+        dprintf(tmp -> fd, ">> Online players - %d\n", game -> players);
         dprintf(tmp -> fd, ">> Current month - %d\n", game -> month);
+        dprintf(tmp -> fd, ">> Current level - %d\n", game -> lvl);
+        dprintf(tmp -> fd, ">> Next month min price for Raw - %d\n", game -> priceRaw);
+        dprintf(tmp -> fd, ">> Next month max price for Production - %d\n", game -> priceProd);
         printTurnEach(players, tmp -> fd);
         tmp = tmp -> next;
     }
@@ -557,6 +594,73 @@ void handleInGame(int fd)
     dprintf(fd, ">> Game has started, wait for next session\n");
     shutdown(fd, 2);
     close(fd);
+}
+
+int isEndGame(gm * game, usr * users)
+{
+    usr * tmp = users;
+    int sum = 0;
+    while(tmp){
+        sum += !tmp -> isBankrupt;
+        tmp = tmp -> next;
+    }
+    if(sum == 0 || sum == 1)
+        return 1;
+    return 0;
+}
+
+usr * reinitU(usr * users)
+{
+    int i;
+    usr * tmp = users;
+    while(tmp){
+        tmp -> resources[money] = 10000;
+        tmp -> resources[raw] = 4;
+        tmp -> resources[factories] = 2;
+        tmp -> resources[production] = 2;
+        tmp -> sums[production] = 2000;
+        tmp -> sums[factories] = 2500;
+        tmp -> isBankrupt = 0;
+        for(i = 0; i < 4; i++)
+           tmp -> building[i] = 0;
+        for(i = 0; i < 5; i++)
+           tmp -> reqs[i] = 0;
+        tmp = tmp -> next;
+    }
+    return users;
+}
+
+gm * reinitG(gm * tmp)
+{
+    tmp -> lvl = 3;
+    tmp -> isStarted = 0;
+    tmp -> priceProd = 5500;
+    tmp -> priceRaw = 500;
+    tmp -> coeffProd = 2.0;
+    tmp -> coeffRaw = 2.0;
+    tmp -> month = 0;
+    return tmp;
+}
+
+void endGame(gm * game, usr * users)
+{
+    int winner = -1;
+    usr * tmp = users;
+    while(tmp){
+        if(!tmp -> isBankrupt)
+            winner = tmp -> fd - 3;
+        tmp = tmp -> next;
+    }
+    tmp = users;
+    while(tmp){
+        if(winner != -1)
+            dprintf(tmp -> fd, ">> WINNER - User #%d\n", winner);
+        else
+            dprintf(tmp -> fd, ">> Nobody wins\n");
+        tmp = tmp -> next;
+    }
+    game = reinitG(game);
+    users = reinitU(users);
 }
 
 void processing(int ls)
@@ -612,6 +716,8 @@ void processing(int ls)
             printTurn(players, game);
         }
         players = updateUsrs(players, disconn);
+        if(isEndGame(game, players) && game -> isStarted)
+            endGame(game, players);
     }
 }
 
