@@ -440,24 +440,104 @@ usr * changeValues(usr * users)
     return users;
 }
 
-void ssort(int * reqs, int * sums, int * id, int * len)
+int * randomize(int * arr, int left, int right)
+{
+    int edge = left;
+    while(edge != right){
+        int res = edge + rand() % (right - edge + 1);
+        //printf("res = %d edge =  %d right = %d\n", res, edge, right);
+        if(edge != res){
+            arr[res] = arr[edge] ^ arr[res];
+            arr[edge] = arr[edge] ^ arr[res];
+            arr[res] = arr[edge] ^ arr[res];
+        }
+        edge++;
+    }
+    return arr;
+}
+
+int * eraseReqs(int maxreq, int len, int * reqs)
+{
+    int i;
+    int maxr = maxreq;
+    for(i = 0; i < len; i++){
+        if(maxr - reqs[i] >= 0)
+            maxr -= reqs[i];
+        else if(maxr == 0){
+            reqs[i] = 0;
+        }
+        else{
+            reqs[i] -= maxr;
+            maxr = 0;
+        }
+    }
+    return reqs;
+}
+
+int ssort(int len, int * index, int * arr, int * reqs, int maxreq)
 {
     int i, j;
+
     for(i = 0; i < len - 1; i++){
-        for(j = 0; j < len - (i + 1); j++){
-            if(sums[j] < sums[j + 1]){
-                int tmp = sums[j];
-                sums[j] = sums[j + 1];
-                sums[j + 1] = tmp;
-                int tmp = reqs[j];
-                reqs[j] = reqs[j + 1];
-                reqs[j + 1] = tmp;
-                int tmp = id[j];
-                id[j] = id[j + 1];
-                id[j + 1] = tmp;
+        for (j = 0; j < len - i - 1; j++){
+            if(arr[j] < arr[j + 1]){
+                arr[j] = arr[j] ^ arr[j + 1];
+                arr[j + 1] = arr[j] ^ arr[j + 1];
+                arr[j] = arr[j] ^ arr[j + 1];
+                index[j] = index[j] ^ index[j + 1];
+                index[j + 1] = index[j] ^ index[j + 1];
+                index[j] = index[j] ^ index[j + 1];
+                reqs[j] = reqs[j] ^ reqs[j + 1];
+                reqs[j + 1] = reqs[j] ^ reqs[j + 1];
+                reqs[j] = reqs[j] ^ reqs[j + 1];
             }
         }
     }
+
+    int cnt = 0;
+    int key = -1;
+    int begin = 0;
+    while(cnt < len){
+        if(key != arr[cnt]){
+            if(cnt - 1 - begin > 0)
+                randomize(index, begin, cnt - 1);
+            begin = cnt;
+            key = arr[cnt];
+        }
+        cnt++;
+    }
+    
+
+    if(cnt - 1 - begin > 0)
+        randomize(index, begin, cnt - 1);
+    
+    reqs = eraseReqs(maxreq, len, reqs);
+
+    for (i = 0; i < len; i++){
+        printf("#%d sum = %d req = %d\n", index[i], arr[i], reqs[i]);
+    }
+
+    return 0;
+}
+
+int findIndexById(int key, int * id)
+{
+    int i = 0;
+    while(key != id[i])
+        i++;
+    return i;
+}
+
+usr * changeReqs(usr * users, int * reqs, int * id, int type)
+{
+    int ind;
+    usr * tmp = users;
+    while(tmp){
+        ind = findIndexById(tmp -> fd, id);
+        tmp -> resources[type] = reqs[ind];
+        tmp = tmp -> next;
+    }
+    return users;
 }
 
 usr * doAuction(usr * users, gm * game)
@@ -474,19 +554,24 @@ usr * doAuction(usr * users, gm * game)
         sums[i] = tmp -> sums[buy];
         id[i] = tmp -> fd;
         tmp = tmp -> next;
+        i++;
     }
-    ssort(reqs, sums, id, game -> players);
+    ssort(game -> players, id, sums, reqs, maxRaw);
+    users = changeReqs(users, reqs, id, buy);
     /**/
-
-    int i = 0;
+    tmp = users;
+    i = 0;
     while(tmp){
         reqs[i] = tmp -> reqs[sell];
         sums[i] = tmp -> sums[sell];
         id[i] = tmp -> fd;
         tmp = tmp -> next;
+        i++;
     }
-    ssort(reqs, sums, id, game -> players);
+    ssort(game -> players, id, sums, reqs, maxProd);
+    users = changeReqs(users, reqs, id, sell);
     /**/
+    return users;
 }
 
 usr * trading(usr * users, gm * game)
