@@ -265,7 +265,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
             else if(!strcmp("produce", arg[0])){
                 i++;
                 int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
-                if(res == 0 || user -> reqs[i] < 0 || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce]) || user -> resources[raw] < user -> reqs[produce] || user -> reqs[end]){
+                if(res == 0 || user -> reqs[i] < 0 || user -> resources[factories] < user -> reqs[production] || notEnoughMoney(user -> resources[money], user -> sums[production], user -> reqs[produce]) || user -> resources[raw] < user -> reqs[produce] || user -> reqs[end]){
                     dprintf(user -> fd, ">> Incorrect input, try \"help\"\n");
                     user -> reqs[i] = 0;
                 }
@@ -294,7 +294,7 @@ void execStarted(char ** arg, usr * user, int numW, usr * list, gm * game)
                     i++;
                     int res = sscanf(arg[1], "%d", &(user -> reqs[i]));
                     int res2 = sscanf(arg[2], "%d", &(user -> sums[i]));
-                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[raw] && !user -> reqs[end] && priceRange(arg[0], user -> sums[sell], game) && !user -> isBankrupt)
+                    if(res && res2 && user -> reqs[i] > 0 && user -> sums[i] > 0 && user -> reqs[sell] <= user -> resources[production] && !user -> reqs[end] && priceRange(arg[0], user -> sums[sell], game) && !user -> isBankrupt)
                         dprintf(user -> fd, ">> Your request accepted : %s %d %d\n", arg[0], user -> reqs[i], user -> sums[i]);
                     else{
                         user -> reqs[i] = 0;
@@ -474,13 +474,20 @@ int * eraseReqs(int maxreq, int len, int * reqs)
     return reqs;
 }
 
-int ssort(int len, int * index, int * arr, int * reqs, int maxreq)
+int compare(int a, int b, int type)
+{
+    if(type == sell)
+        return a >= b;
+    return a < b;
+}
+
+int ssort(int len, int * index, int * arr, int * reqs, int maxreq, int type)
 {
     int i, j;
 
     for(i = 0; i < len - 1; i++){
         for (j = 0; j < len - i - 1; j++){
-            if(arr[j] < arr[j + 1]){
+            if(compare(arr[j], arr[j + 1], type)){
                 arr[j] = arr[j] ^ arr[j + 1];
                 arr[j + 1] = arr[j] ^ arr[j + 1];
                 arr[j] = arr[j] ^ arr[j + 1];
@@ -534,7 +541,7 @@ usr * changeReqs(usr * users, int * reqs, int * id, int type)
     usr * tmp = users;
     while(tmp){
         ind = findIndexById(tmp -> fd, id);
-        tmp -> resources[type] = reqs[ind];
+        tmp -> reqs[type] = reqs[ind];
         tmp = tmp -> next;
     }
     return users;
@@ -556,7 +563,7 @@ usr * doAuction(usr * users, gm * game)
         tmp = tmp -> next;
         i++;
     }
-    ssort(game -> players, id, sums, reqs, maxRaw);
+    ssort(game -> players, id, sums, reqs, maxRaw, buy);
     users = changeReqs(users, reqs, id, buy);
     /**/
     tmp = users;
@@ -568,7 +575,7 @@ usr * doAuction(usr * users, gm * game)
         tmp = tmp -> next;
         i++;
     }
-    ssort(game -> players, id, sums, reqs, maxProd);
+    ssort(game -> players, id, sums, reqs, maxProd, sell);
     users = changeReqs(users, reqs, id, sell);
     /**/
     return users;
@@ -581,9 +588,9 @@ usr * trading(usr * users, gm * game)
     users = doAuction(users, game);
     while(tmp){
         tmp -> resources[money] -= tmp -> reqs[buy] * tmp -> sums[buy];         /*money for buy*/
-        tmp -> resources[raw] += (tmp -> reqs[buy] - tmp -> reqs[sell] - tmp -> reqs[produce]);/*change raw*/
+        tmp -> resources[raw] += (tmp -> reqs[buy] - tmp -> reqs[produce]);/*change raw*/
         tmp -> resources[money] += tmp -> reqs[sell] * tmp -> sums[sell];       /*money for sell*/
-        tmp -> resources[production] += tmp -> reqs[produce];                     /*production*/
+        tmp -> resources[production] += tmp -> reqs[produce] - tmp -> reqs[sell];                     /*production*/
         tmp -> resources[money] -= tmp -> reqs[build] * tmp -> sums[build];     /*money for build*/
         tmp -> resources[factories] += tmp -> building[3];                        /*build factory*/
         tmp -> resources[money] -= tmp -> reqs[produce] * tmp -> sums[produce]; /*money for produce*/
